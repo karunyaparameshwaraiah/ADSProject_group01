@@ -34,5 +34,32 @@ import chisel3._
 // EX-Barrier
 // -----------------------------------------
 
-//ToDo: Add your implementation according to the specification above here 
+class EXbarrier extends Module {
+  val io = IO(new Bundle {
+    // Inputs from EX stage
+    val inAluResult = Input(UInt(32.W))
+    val inRD = Input(UInt(5.W))
+    val inXcptInvalid = Input(Bool())
+    
+    // Outputs to MEM stage
+    val outAluResult = Output(UInt(32.W))
+    val outRD = Output(UInt(5.W))
+    val outXcptInvalid = Output(Bool())
+  })
+
+  // Internal registers
+  val aluResult = RegInit(0.U(32.W))
+  val rd = RegInit(0.U(5.W))
+  val exception = RegInit(false.B)
+
+  // Update registers with inputs each cycle
+  aluResult := io.inAluResult
+  rd := io.inRD
+  exception := io.inXcptInvalid
+
+  // Output registered values
+  io.outAluResult := aluResult
+  io.outRD := rd
+  io.outXcptInvalid := exception
+}
 

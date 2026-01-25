@@ -28,11 +28,22 @@ import chisel3._
 // IF-Barrier
 // -----------------------------------------
 
-class IFBarrier extends Module {
+class IFbarrier extends Module {
   val io = IO(new Bundle {
-    //ToDo: Add I/O ports
+    // Input from IF stage
+    val instr_in = Input(UInt(32.W))
+    
+    // Output to ID stage
+    val instr_out = Output(UInt(32.W))
   })
 
-//ToDo: Add your implementation according to the specification above here 
+    // Internal register to hold instruction
+    val instrReg = RegInit(0.U(32.W))
+
+    // On each clock cycle, update the register with the input instruction
+    instrReg := io.instr_in
+    
+    // Output the instruction from the register
+    io.instr_out := instrReg
 
 }

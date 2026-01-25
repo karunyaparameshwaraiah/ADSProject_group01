@@ -30,13 +30,49 @@ Functionality:
     Save all input signals to a register and output them in the following clock cycle
 */
 
+// IDbarrier.scala
+// ID-Barrier: pipeline register between Decode and Execute stages
+
 package core_tile
 
 import chisel3._
 import uopc._
 
-// -----------------------------------------
-// ID-Barrier
-// -----------------------------------------
+class IDbarrier extends Module {
+  val io = IO(new Bundle {
+    // Inputs from ID stage
+    val inUOP = Input(uopc())           // ChiselEnum type
+    val inRD = Input(UInt(5.W))
+    val inOperandA = Input(UInt(32.W))
+    val inOperandB = Input(UInt(32.W))
+    val inXcptInvalid = Input(Bool())
+    
+    // Outputs to EX stage
+    val outUOP = Output(uopc())         // ChiselEnum type
+    val outRD = Output(UInt(5.W))
+    val outOperandA = Output(UInt(32.W))
+    val outOperandB = Output(UInt(32.W))
+    val outXcptInvalid = Output(Bool())
+  })
 
-//ToDo: Add your implementation according to the specification above here 
+  // Pipeline registers
+  val uop = RegInit(uopNOP)             // Initialize to NOP (ChiselEnum)
+  val rd = RegInit(0.U(5.W))
+  val operandA = RegInit(0.U(32.W))
+  val operandB = RegInit(0.U(32.W))
+  val xcptInvalid = RegInit(false.B)
+
+  // Update registers with inputs each cycle
+  uop := io.inUOP
+  rd := io.inRD
+  operandA := io.inOperandA
+  operandB := io.inOperandB
+  xcptInvalid := io.inXcptInvalid
+
+  // Output registered values
+  io.outUOP := uop
+  io.outRD := rd
+  io.outOperandA := operandA
+  io.outOperandB := operandB
+  io.outXcptInvalid := xcptInvalid
+}
