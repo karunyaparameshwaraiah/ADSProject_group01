@@ -27,4 +27,17 @@ import chisel3.experimental.ChiselEnum
 // Global Definitions and Data Types
 // -----------------------------------------
 
+object uopc extends ChiselEnum {
+  // R-type instructions
+  val uopADD, uopSUB, uopSLL, uopSLT, uopSLTU = Value
+  val uopXOR, uopSRL, uopSRA, uopOR, uopAND = Value
+  
+  // I-type instructions
+  val uopADDI, uopSLLI, uopSLTI, uopSLTIU = Value
+  val uopXORI, uopSRLI, uopSRAI, uopORI, uopANDI = Value
+  
+  // Special
+  val uopNOP = Value
+}
+
 //ToDo: Add your implementation according to the specification above here 
