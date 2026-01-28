@@ -95,7 +95,14 @@ class EX extends Module {
   alu.io.operation := aluOp
 
   // Outputs
-  io.aluResult := alu.io.aluResult
+  
+
+ when(io.rd === 0.U) {
+    io.aluResult := 0.U
+  } .otherwise {
+    io.aluResult := alu.io.aluResult
+  }
   io.outRD := io.rd
+
   io.outXcptInvalid := io.XcptInvalid
 }
