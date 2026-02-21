@@ -457,8 +457,42 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   // Test 7: Data Hazard - RAW (Read After Write)
-  "Test7_Hazard_RAW" should "handle data hazards with forwarding/stalling (currently must fail)" in {
+  "Test7_Hazard_RAW" should "handle data hazards with forwarding/stalling (must Pass now)" in {
     test(new PipelinedRV32I("src/test/programs/Binary_file_hazard_raw")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      // dut.clock.setTimeout(0)
+      // dut.clock.step(5)
+      
+      // addi x1, x0, 10
+      // dut.io.result.expect(10.U)
+      // dut.io.exception.expect(false.B)
+      
+      // addi x2, x1, 5 - RAW
+      // dut.clock.step(1)
+      // dut.io.result.expect(15.U)
+      // dut.io.exception.expect(false.B)
+
+      dut.clock.setTimeout(0)
+      
+      // Get first instruction to WB
+      dut.clock.step(5) 
+      dut.io.result.expect(10.U) // x1 = 10
+      
+      // Step once to move the second instruction into WB
+      dut.clock.step(1)
+      
+      // NOW check the result
+      dut.io.result.expect(15.U) // x2 = 10 + 5 (Forwarded!)
+      dut.io.exception.expect(false.B)
+
+      
+      println("Test 7: RAW Hazard Detection - PASSED")
+    }
+  }
+
+  // Test 8: Data Hazard - WAW/WAR (Read After Write)
+  "Test8_Hazard_WAW_WAR" should "handle data hazards with forwarding/stalling (must Pass now)" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_hazard_waw")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       
       dut.clock.setTimeout(0)
       dut.clock.step(5)
@@ -467,7 +501,7 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.result.expect(10.U)
       dut.io.exception.expect(false.B)
       
-      // addi x2, x1, 5 - RAW
+      // // addi x2, x1, 5 - RAW
       dut.clock.step(1)
       dut.io.result.expect(15.U)
       dut.io.exception.expect(false.B)
@@ -483,7 +517,7 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.exception.expect(false.B)
 
       
-      println("Test 7: RAW/WAW Hazard Detection - PASSED")
+      println("Test 8: WAW/WAR Hazard Detection - PASSED")
     }
   }
 }

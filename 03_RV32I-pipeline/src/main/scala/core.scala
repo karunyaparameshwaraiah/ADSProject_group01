@@ -72,6 +72,7 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   val exStage = Module(new EX())
   val memStage = Module(new MEM())
   val wbStage = Module(new WB())
+  val forwardingUnit = Module(new ForwardingUnit()) // Instantiate Forwarding Unit
   
   // Pipeline barriers
   val ifBarrier = Module(new IFbarrier())
@@ -118,6 +119,24 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   idBarrier.io.inOperandA := idStage.io.operandA
   idBarrier.io.inOperandB := idStage.io.operandB
   idBarrier.io.inXcptInvalid := idStage.io.XcptInvalid
+  idBarrier.io.inRS1 := idStage.io.regFileReq_A // Pass Source Reg 1 Address to ID Barrier
+  idBarrier.io.inRS2 := idStage.io.regFileReq_B // Pass Source Reg 2 Address to ID Barrier
+
+
+  //===========================================================================
+  // Forwarding Unit Connections
+  //===========================================================================
+  
+  //Inputs from the EX stage (current instruction in EX stage)
+  forwardingUnit.io.rs1_ex := idBarrier.io.outRS1
+  forwardingUnit.io.rs2_ex := idBarrier.io.outRS2
+  //Inputs from MEM stage (1 instruction ahead)
+  forwardingUnit.io.rd_mem := exBarrier.io.outRD
+  forwardingUnit.io.regWrite_mem := true.B //Assume all passing instruction write
+
+  //Inputs from WB stage (2 instructions ahead)
+  forwardingUnit.io.rd_wb := memBarrier.io.outRD
+  forwardingUnit.io.regWrite_wb := true.B //Assume all passing instruction write
   
   // ============================================================================
   // Stage 3: Execute (EX)
@@ -128,6 +147,14 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   exStage.io.operandB := idBarrier.io.outOperandB
   exStage.io.rd := idBarrier.io.outRD
   exStage.io.XcptInvalid := idBarrier.io.outXcptInvalid
+
+  // Connect forwarding control signals to EX stage
+  exStage.io.forwardA := forwardingUnit.io.forwardA
+  exStage.io.forwardB := forwardingUnit.io.forwardB
+
+  //Forwarding data inputs (from MEM and WB stages) to EX stage
+  exStage.io.dataFromWB := memBarrier.io.outAluResult // Forward ALU result from MEM stage
+  exStage.io.dataFromMEM := exBarrier.io.outAluResult // Forward ALU result from EX stage (for MEM stage)
   
   // ============================================================================
   // EX/MEM Barrier

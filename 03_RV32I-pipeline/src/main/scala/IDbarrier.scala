@@ -46,6 +46,8 @@ class IDbarrier extends Module {
     val inOperandA = Input(UInt(32.W))
     val inOperandB = Input(UInt(32.W))
     val inXcptInvalid = Input(Bool())
+    val inRS1 = Input(UInt(5.W)) // Source Reg 1 Address
+    val inRS2 = Input(UInt(5.W)) // Source Reg 2 Address
     
     // Outputs to EX stage
     val outUOP = Output(uopc())         // ChiselEnum type
@@ -53,6 +55,8 @@ class IDbarrier extends Module {
     val outOperandA = Output(UInt(32.W))
     val outOperandB = Output(UInt(32.W))
     val outXcptInvalid = Output(Bool())
+    val outRS1 = Output(UInt(5.W)) // Source Reg 1 Address to EX
+    val outRS2 = Output(UInt(5.W)) // Source Reg 2 Address to EX
   })
 
   // Pipeline registers
@@ -61,6 +65,8 @@ class IDbarrier extends Module {
   val operandA = RegInit(0.U(32.W))
   val operandB = RegInit(0.U(32.W))
   val xcptInvalid = RegInit(false.B)
+  val rs1 = RegInit(0.U(5.W))   // Register for Source Reg 1 Address
+  val rs2 = RegInit(0.U(5.W))   // Register for Source Reg 2 Address
 
   // Update registers with inputs each cycle
   uop := io.inUOP
@@ -68,6 +74,8 @@ class IDbarrier extends Module {
   operandA := io.inOperandA
   operandB := io.inOperandB
   xcptInvalid := io.inXcptInvalid
+  rs1 := io.inRS1 // Capture Source Reg 1 Address
+  rs2 := io.inRS2 // Capture Source Reg 2 Address
 
   // Output registered values
   io.outUOP := uop
@@ -75,4 +83,6 @@ class IDbarrier extends Module {
   io.outOperandA := operandA
   io.outOperandB := operandB
   io.outXcptInvalid := xcptInvalid
+  io.outRS1 := rs1 // Output Source Reg 1 Address to EX
+  io.outRS2 := rs2 // Output Source Reg 2 Address to EX
 }

@@ -49,6 +49,14 @@ class EX extends Module {
     val rd = Input(UInt(5.W))
     val XcptInvalid = Input(Bool())
     
+    //Forwarding inputs
+    val forwardA = Input(UInt(2.W)) // Control signal for operandA forwarding
+    val forwardB = Input(UInt(2.W)) // Control signal for operandB forwarding
+
+    // Forwarding data inputs
+    val dataFromWB = Input(UInt(32.W)) // Data forwarded from WB stage
+    val dataFromMEM = Input(UInt(32.W)) // Data forwarded from MEM stage
+    
     // Outputs to EX Barrier
     val aluResult = Output(UInt(32.W))
     val outRD = Output(UInt(5.W))
@@ -57,6 +65,32 @@ class EX extends Module {
 
   // Instantiate ALU from Assignment02
   val alu = Module(new ALU())
+
+  // //MUX for forwarding logic
+  // val operandA = MuxCase(io.forwardA, io.operandA, Seq(
+  //   "b00".U -> io.operandA, // No forwarding use operand from ID
+  //   "b01".U -> io.dataFromWB, // Forward from WB stage
+  //   "b10".U -> io.dataFromMEM // Forward from MEM stage
+  // ))
+
+  // val operandB = MuxCase(io.forwardB, io.operandB, Seq(
+  //   "b00".U -> io.operandB, // No forwarding use operand from ID
+  //   "b01".U -> io.dataFromWB, // Forward from WB stage
+  //   "b10".U -> io.dataFromMEM // Forward from MEM stage
+  // ))
+
+
+  // Select Operand A
+  val opA_mux = MuxCase(io.operandA, Seq(
+    (io.forwardA === "b10".U) -> io.dataFromMEM, // Priority: MEM stage is newer
+    (io.forwardA === "b01".U) -> io.dataFromWB
+  ))
+
+  // Select Operand B
+  val opB_mux = MuxCase(io.operandB, Seq(
+    (io.forwardB === "b10".U) -> io.dataFromMEM,
+    (io.forwardB === "b01".U) -> io.dataFromWB
+  ))
 
   // Map uopc micro-operation codes to ALU operation codes
   val aluOp = Wire(ALUOp())
@@ -90,8 +124,10 @@ class EX extends Module {
   ))
 
   // Connect ALU inputs
-  alu.io.operandA := io.operandA
-  alu.io.operandB := io.operandB
+  //alu.io.operandA := io.operandA
+  //alu.io.operandB := io.operandB
+  alu.io.operandA := opA_mux
+  alu.io.operandB := opB_mux
   alu.io.operation := aluOp
 
   // Outputs
