@@ -64,6 +64,10 @@ class ID extends Module {
     val operandA = Output(UInt(32.W))        // First operand (from rs1)
     val operandB = Output(UInt(32.W))        // Second operand (rs2 or immediate)
     val XcptInvalid = Output(Bool())         // Invalid instruction exception
+    val imm = Output(UInt(32.W))             // Immediate value for I-type instructions
+
+    // RegWrite flag to prevent branches/stores from corrupting registers
+    val regWrite = Output(Bool())
   })
 
   // Extract instruction fields
@@ -79,19 +83,33 @@ class ID extends Module {
   
   // For shift instructions, only lower 5 bits are used
   val immShift = Cat(Fill(27, 0.U), io.instr(24, 20))
+
+  //B type immidiate (beq, bne etc)
+  val immB = Cat(Fill(19, io.instr(31)), io.instr(31), io.instr(7), io.instr(30, 25), io.instr(11, 8), 0.U(1.W))
+
+  //J type immidiate (jal)
+  val immJ = Cat(Fill(11, io.instr(31)), io.instr(31), io.instr(19, 12), io.instr(20), io.instr(30, 21), 0.U(1.W))
   
   // Detect instruction types
   val isRType = opcode === "b0110011".U  // 0x33
   val isIType = opcode === "b0010011".U  // 0x13
+
+  //Branche type
+  val isBranch  = opcode === "b1100011".U // 0x63
+  val isJAL     = opcode === "b1101111".U // 0x6F
+  val isJALR    = opcode === "b1100111".U // 0x67
+
+  //Store type (for regWrite control)
+  val isStore = opcode === "b0100011".U // 0x23
   
   // Check for shift immediate instructions
   val isShiftImm = isIType && (funct3 === "b001".U || funct3 === "b101".U)
   
   // Select appropriate immediate
-  val immediate = Mux(isShiftImm, immShift, immI)
+  //val immediate = Mux(isShiftImm, immShift, immI)
   
   // Determine if instruction is valid
-  val isValid = isRType || isIType
+  val isValid = isRType || isIType || isBranch || isJAL || isJALR
   
   // Request register reads
   io.regFileReq_A := rs1
@@ -124,14 +142,41 @@ class ID extends Module {
       "b110".U -> uopORI,    // ORI
       "b111".U -> uopANDI    // ANDI
     ))
+  }.elsewhen(isBranch) {
+    // Branch instructions
+    uop := MuxLookup(funct3, uopNOP, Seq(
+      "b000".U -> uopBEQ,    // BEQ
+      "b001".U -> uopBNE,    // BNE
+      "b100".U -> uopBLT,    // BLT
+      "b101".U -> uopBGE,    // BGE
+      "b110".U -> uopBLTU,   // BLTU
+      "b111".U -> uopBGEU    // BGEU
+    ))
+  }.elsewhen(isJAL) {
+    uop := uopJAL  // JAL instruction
+  }.elsewhen(isJALR) {
+    uop := uopJALR // JALR instruction
   }.otherwise {
     uop := uopNOP  // Invalid instruction
   }
+
+  //Select operandB: either rs2 value or immediate
+  val immediate = MuxCase(immI, Seq(
+    isBranch -> immB,
+    isJAL -> immJ,
+    isJALR -> immI,
+    isShiftImm -> immShift
+  ))
   
   // Outputs
   io.uop := uop
   io.rd := rd
   io.operandA := io.regFileResp_A  // Value from rs1
-  io.operandB := Mux(isIType, immediate, io.regFileResp_B)  // Immediate or rs2 value
+  //io.operandB := Mux(isIType, immediate, io.regFileResp_B)  // Immediate or rs2 value
+  io.operandB := Mux(isRType || isBranch, io.regFileResp_B, immediate)  // Immediate for I-type, rs2 for R-type
   io.XcptInvalid := !isValid
+  io.imm := immediate // Send the calculated immediate to the next stage
+
+  // Only write to registers if valid and NOT a branch or store
+  io.regWrite := isValid && !isBranch && !isStore
 }

@@ -91,11 +91,17 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   // IF stage outputs instruction directly
   // (Instruction memory is internal to IF stage)
 
+  //Feedback from EX stage for branch/jump handling
+  ifStage.io.takeBranch := exStage.io.takeBranch
+  ifStage.io.targetAddr := exStage.io.targetAddr
+
   // ============================================================================
   // IF/ID Barrier
   // ============================================================================
   
   ifBarrier.io.instr_in := ifStage.io.instr
+  ifBarrier.io.pc_in := ifStage.io.outPC // Pass the current PC to IF Barrier
+  ifBarrier.io.flush := exStage.io.takeBranch // Flush IF/ID barrier on branch
   
   // ============================================================================
   // Stage 2: Instruction Decode (ID)
@@ -121,6 +127,12 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   idBarrier.io.inXcptInvalid := idStage.io.XcptInvalid
   idBarrier.io.inRS1 := idStage.io.regFileReq_A // Pass Source Reg 1 Address to ID Barrier
   idBarrier.io.inRS2 := idStage.io.regFileReq_B // Pass Source Reg 2 Address to ID Barrier
+  idBarrier.io.inImm := idStage.io.imm // Pass Immediate value to ID Barrier
+  idBarrier.io.inPC := ifBarrier.io.pc_out // Pass the PC from IF Barrier to ID Barrier
+  idBarrier.io.flush := exStage.io.takeBranch // Flush ID/EX barrier on branch
+
+  // Pass RegWrite flag from ID Stage to ID/EX Barrier
+  idBarrier.io.inRegWrite := idStage.io.regWrite
 
 
   //===========================================================================
@@ -132,11 +144,15 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   forwardingUnit.io.rs2_ex := idBarrier.io.outRS2
   //Inputs from MEM stage (1 instruction ahead)
   forwardingUnit.io.rd_mem := exBarrier.io.outRD
-  forwardingUnit.io.regWrite_mem := true.B //Assume all passing instruction write
+  //forwardingUnit.io.regWrite_mem := true.B //Assume all passing instruction write
+  // FIXED: Use actual RegWrite signal instead of true.B
+  forwardingUnit.io.regWrite_mem := exBarrier.io.outRegWrite
 
   //Inputs from WB stage (2 instructions ahead)
   forwardingUnit.io.rd_wb := memBarrier.io.outRD
-  forwardingUnit.io.regWrite_wb := true.B //Assume all passing instruction write
+  //forwardingUnit.io.regWrite_wb := true.B //Assume all passing instruction write
+  // FIXED: Use actual RegWrite signal instead of true.B
+  forwardingUnit.io.regWrite_wb := memBarrier.io.outRegWrite
   
   // ============================================================================
   // Stage 3: Execute (EX)
@@ -147,6 +163,11 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   exStage.io.operandB := idBarrier.io.outOperandB
   exStage.io.rd := idBarrier.io.outRD
   exStage.io.XcptInvalid := idBarrier.io.outXcptInvalid
+  exStage.io.pc := idBarrier.io.outPC // Pass the PC to EX stage
+  exStage.io.imm := idBarrier.io.outImm // Pass the immediate value to EX stage
+
+  // Pass RegWrite flag into EX stage
+  exStage.io.regWrite := idBarrier.io.outRegWrite
 
   // Connect forwarding control signals to EX stage
   exStage.io.forwardA := forwardingUnit.io.forwardA
@@ -163,6 +184,9 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   exBarrier.io.inAluResult := exStage.io.aluResult
   exBarrier.io.inRD := exStage.io.outRD
   exBarrier.io.inXcptInvalid := exStage.io.outXcptInvalid
+
+  // Pass RegWrite flag from EX stage to EX/MEM Barrier
+  exBarrier.io.inRegWrite := exStage.io.outRegWrite
   
   // ============================================================================
   // Stage 4: Memory (MEM)
@@ -178,6 +202,9 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   memBarrier.io.inAluResult := exBarrier.io.outAluResult
   memBarrier.io.inRD := exBarrier.io.outRD
   memBarrier.io.inException := exBarrier.io.outXcptInvalid
+
+  // Pass RegWrite flag from EX/MEM Barrier to MEM/WB Barrier
+  memBarrier.io.inRegWrite := exBarrier.io.outRegWrite
   
   // ============================================================================
   // Stage 5: Writeback (WB)
@@ -185,6 +212,9 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   
   wbStage.io.aluResult := memBarrier.io.outAluResult
   wbStage.io.rd := memBarrier.io.outRD
+
+  // Pass RegWrite flag into the WB stage so it controls the register file
+  wbStage.io.regWrite := memBarrier.io.outRegWrite
   
   // Connect WB stage to register file write port
   registerFile.io.req_3 <> wbStage.io.regFileReq
@@ -195,11 +225,12 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   
   wbBarrier.io.inCheckRes := wbStage.io.check_res
   wbBarrier.io.inXcptInvalid := memBarrier.io.outException
+
   
   // ============================================================================
   // Output Signals
   // ============================================================================
   
   io.check_res := wbBarrier.io.outCheckRes
-  io.exception := wbBarrier.io.outXcptInvalid
+  io.exception := wbBarrier.io.outXcptInvalid 
 }

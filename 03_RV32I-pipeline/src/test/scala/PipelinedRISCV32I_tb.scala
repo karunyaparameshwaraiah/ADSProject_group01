@@ -520,4 +520,29 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       println("Test 8: WAW/WAR Hazard Detection - PASSED")
     }
   }
+
+  // Test 9: Control Hazards - Branching and Flushing
+  "Test9_Branching" should "execute loops and flush pipeline correctly" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_branch")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      dut.clock.setTimeout(0)
+      
+      var found = false
+      
+      // Run for up to 100 cycles to find the result
+      for (_ <- 0 until 100) {
+        dut.clock.step(1)
+        
+        // Check if the result 100 appears on the output
+        if (dut.io.result.peek().litValue == 100) {
+          found = true
+        }
+      }
+      
+      // Assert that we found the success value
+      assert(found, "The processor never output the value 100! (Loop might be stuck or result missed)")
+      
+      println("Test 9: Control Hazards (Branch Loop) - PASSED")
+    }
+  }
 }

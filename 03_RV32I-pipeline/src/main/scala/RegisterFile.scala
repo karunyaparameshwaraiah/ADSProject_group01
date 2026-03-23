@@ -72,11 +72,19 @@ class regFile extends Module {
 
   // Read port 1: combinational read
   // Register x0 is hardwired to 0
-  io.resp_1.data := Mux(io.req_1.addr === 0.U, 0.U, registers(io.req_1.addr))
+  //io.resp_1.data := Mux(io.req_1.addr === 0.U, 0.U, registers(io.req_1.addr))
+  // If reading and writing the same address in the same cycle, return the new data instantly
+  io.resp_1.data := Mux(io.req_1.addr === 0.U, 0.U, 
+                      Mux(io.req_3.wr_en && io.req_3.addr === io.req_1.addr, io.req_3.data, 
+                      registers(io.req_1.addr)))
 
   // Read port 2: combinational read
   // Register x0 is hardwired to 0
-  io.resp_2.data := Mux(io.req_2.addr === 0.U, 0.U, registers(io.req_2.addr))
+  //io.resp_2.data := Mux(io.req_2.addr === 0.U, 0.U, registers(io.req_2.addr))
+  // If reading and writing the same address in the same cycle, return the new data instantly
+  io.resp_2.data := Mux(io.req_2.addr === 0.U, 0.U, 
+                      Mux(io.req_3.wr_en && io.req_3.addr === io.req_2.addr, io.req_3.data, 
+                      registers(io.req_2.addr)))
 
   // Write port: synchronous write
   // Only write if wr_en is asserted and destination is not x0

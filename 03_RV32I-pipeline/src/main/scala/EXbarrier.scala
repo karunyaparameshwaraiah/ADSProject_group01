@@ -40,26 +40,35 @@ class EXbarrier extends Module {
     val inAluResult = Input(UInt(32.W))
     val inRD = Input(UInt(5.W))
     val inXcptInvalid = Input(Bool())
+
+    // RegWrite Input
+    val inRegWrite = Input(Bool())
     
     // Outputs to MEM stage
     val outAluResult = Output(UInt(32.W))
     val outRD = Output(UInt(5.W))
     val outXcptInvalid = Output(Bool())
+
+    // RegWrite Output
+    val outRegWrite = Output(Bool())
   })
 
   // Internal registers
   val aluResult = RegInit(0.U(32.W))
   val rd = RegInit(0.U(5.W))
   val exception = RegInit(false.B)
+  val regWrite = RegInit(false.B) // Register to hold RegWrite signal
 
   // Update registers with inputs each cycle
   aluResult := io.inAluResult
   rd := io.inRD
   exception := io.inXcptInvalid
+  regWrite := io.inRegWrite // Capture the signal
 
   // Output registered values
   io.outAluResult := aluResult
   io.outRD := rd
   io.outXcptInvalid := exception
+  io.outRegWrite := regWrite // Output the signal
 }
 

@@ -32,18 +32,29 @@ class IFbarrier extends Module {
   val io = IO(new Bundle {
     // Input from IF stage
     val instr_in = Input(UInt(32.W))
+    val flush = Input(Bool()) // From IF stage
+    val pc_in = Input(UInt(32.W)) // Program Counter must travel with instruction
+
     
     // Output to ID stage
     val instr_out = Output(UInt(32.W))
+    val pc_out = Output(UInt(32.W)) // Pass the PC to ID stage
   })
 
     // Internal register to hold instruction
     val instrReg = RegInit(0.U(32.W))
+    val pcReg = RegInit(0.U(32.W)) // Register to hold the PC
 
-    // On each clock cycle, update the register with the input instruction
-    instrReg := io.instr_in
-    
+    when(io.flush) {
+        instrReg := "h00000013".U // NOP instruction
+        pcReg := 0.U // Reset PC to 0 on flush
+    } .otherwise {
+        instrReg := io.instr_in
+        pcReg := io.pc_in // Update PC register with incoming PC
+    }
+
     // Output the instruction from the register
     io.instr_out := instrReg
+    io.pc_out := pcReg // Output the PC to ID stage
 
 }
