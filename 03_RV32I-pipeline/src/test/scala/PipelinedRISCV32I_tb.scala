@@ -457,8 +457,42 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   // Test 7: Data Hazard - RAW (Read After Write)
-  "Test7_Hazard_RAW" should "handle data hazards with forwarding/stalling (currently must fail)" in {
+  "Test7_Hazard_RAW" should "handle data hazards with forwarding/stalling (must Pass now)" in {
     test(new PipelinedRV32I("src/test/programs/Binary_file_hazard_raw")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      // dut.clock.setTimeout(0)
+      // dut.clock.step(5)
+      
+      // addi x1, x0, 10
+      // dut.io.result.expect(10.U)
+      // dut.io.exception.expect(false.B)
+      
+      // addi x2, x1, 5 - RAW
+      // dut.clock.step(1)
+      // dut.io.result.expect(15.U)
+      // dut.io.exception.expect(false.B)
+
+      dut.clock.setTimeout(0)
+      
+      // Get first instruction to WB
+      dut.clock.step(5) 
+      dut.io.result.expect(10.U) // x1 = 10
+      
+      // Step once to move the second instruction into WB
+      dut.clock.step(1)
+      
+      // NOW check the result
+      dut.io.result.expect(15.U) // x2 = 10 + 5 (Forwarded!)
+      dut.io.exception.expect(false.B)
+
+      
+      println("Test 7: RAW Hazard Detection - PASSED")
+    }
+  }
+
+  // Test 8: Data Hazard - WAW/WAR (Read After Write)
+  "Test8_Hazard_WAW_WAR" should "handle data hazards with forwarding/stalling (must Pass now)" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_hazard_waw")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       
       dut.clock.setTimeout(0)
       dut.clock.step(5)
@@ -467,7 +501,7 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.result.expect(10.U)
       dut.io.exception.expect(false.B)
       
-      // addi x2, x1, 5 - RAW
+      // // addi x2, x1, 5 - RAW
       dut.clock.step(1)
       dut.io.result.expect(15.U)
       dut.io.exception.expect(false.B)
@@ -483,7 +517,47 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.exception.expect(false.B)
 
       
-      println("Test 7: RAW/WAW Hazard Detection - PASSED")
+      println("Test 8: WAW/WAR Hazard Detection - PASSED")
+    }
+  }
+
+  // Test 9: Control Hazards - Branching and Flushing
+  "Test9_Branching" should "execute loops and flush pipeline correctly" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_branch")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      dut.clock.setTimeout(0)
+      
+      var found = false
+      
+      // Run for up to 500 cycles to find the result
+      for (_ <- 0 until 500) {
+        dut.clock.step(1)
+        
+        // Check if the result 100 appears on the output
+        if (dut.io.result.peek().litValue == 100) {
+          found = true
+        }
+      }
+      
+      // Assert that we found the success value
+      assert(found, "The processor never output the value 100! (Loop might be stuck or result missed)")
+      
+      // FETCH PERFORMANCE COUNTERS
+      val branches = dut.io.total_branches.peek().litValue.toDouble
+      val mispredicts = dut.io.total_mispredicts.peek().litValue.toDouble
+      val correct = branches - mispredicts
+      val accuracy = if (branches > 0) (correct / branches) * 100.0 else 0.0
+
+      println("==================================================")
+      println("          BTB PERFORMANCE EVALUATION              ")
+      println("==================================================")
+      println(f"Total Branches Executed:  ${branches.toInt}")
+      println(f"Total Mispredictions:     ${mispredicts.toInt}")
+      println(f"Total Correct Predictions:${correct.toInt}")
+      println(f"Prediction Accuracy:      ${accuracy}%.2f%%")
+      println("==================================================")
+
+      println("Test 9: Control Hazards (Branch Loop) - PASSED")
     }
   }
 }

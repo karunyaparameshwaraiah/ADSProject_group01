@@ -41,8 +41,17 @@ import chisel3.util.experimental.loadMemoryFromFile
 
 class IF (BinaryFile: String) extends Module {
   val io = IO(new Bundle {
+
+    val targetAddr = Input(UInt(32.W)) // Target address for jumps/branches from EX stage
+    val takeBranch = Input(Bool()) // Signal from EX stage indicating whether to take the branch/jump
+
     // ToDo: Add I/O ports
     val instr = Output(UInt(32.W))
+    val outPC = Output(UInt(32.W)) // Output the current PC to ID/EX for branch target calculation
+
+    // Signals from the BTB
+    val btbHit = Input(Bool()) 
+    val btbTarget = Input(UInt(32.W))
   })
 
   // Instruction Memory
@@ -54,11 +63,23 @@ class IF (BinaryFile: String) extends Module {
   // Program Counter
   val PC = RegInit(0.U(32.W))
 
+  //PC select
+  //val nectPC = Mux(io.takeBranch, io.targetAddr, PC + 4.U) // If takeBranch is true, use targetAddr; otherwise, increment PC
+  //PC := nectPC
+
+  // UPDATED PC SELECT LOGIC:
+  // 1. Highest Priority: EX stage misprediction recovery (takeBranch)
+  // 2. Medium Priority: BTB prediction (btbHit)
+  // 3. Lowest Priority: PC + 4
+  val nextPC = Mux(io.takeBranch, io.targetAddr, 
+                 Mux(io.btbHit, io.btbTarget, 
+                 PC + 4.U))
+  PC := nextPC
+
   // Fetch instruction
   io.instr := IMem(PC >> 2) // Word-aligned addressing
-  
-  // Increment PC
-  PC := PC + 4.U
 
+  //Send current PC to ID/EX stage for branch target calculation
+  io.outPC := PC
 }
 

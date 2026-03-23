@@ -35,6 +35,10 @@ object uopc extends ChiselEnum {
   // I-type instructions
   val uopADDI, uopSLLI, uopSLTI, uopSLTIU = Value
   val uopXORI, uopSRLI, uopSRAI, uopORI, uopANDI = Value
+
+  //Branch and Jump instructions
+  val uopBEQ, uopBNE, uopBLT, uopBLTU, uopBGE, uopBGEU = Value
+  val uopJAL, uopJALR = Value
   
   // Special
   val uopNOP = Value
