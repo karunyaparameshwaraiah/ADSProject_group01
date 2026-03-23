@@ -60,6 +60,10 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
     // Output signals for verification
     val check_res = Output(UInt(32.W))
     val exception = Output(Bool())
+
+    // Counters for performance monitoring
+    val total_branches = Output(UInt(32.W))
+    val total_mispredicts = Output(UInt(32.W))
   })
 
   // ============================================================================
@@ -73,6 +77,8 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   val memStage = Module(new MEM())
   val wbStage = Module(new WB())
   val forwardingUnit = Module(new ForwardingUnit()) // Instantiate Forwarding Unit
+
+  val btb = Module(new BTB()) // Instantiate Branch Target Buffer
   
   // Pipeline barriers
   val ifBarrier = Module(new IFbarrier())
@@ -95,6 +101,16 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   ifStage.io.takeBranch := exStage.io.takeBranch
   ifStage.io.targetAddr := exStage.io.targetAddr
 
+  // BTB Wiring
+  btb.io.PC := ifStage.io.outPC
+  // Only register a BTB hit if it is valid AND predicted taken
+  val isPredictedTaken = btb.io.valid && btb.io.predictTaken
+  
+  ifStage.io.btbHit := isPredictedTaken
+  // Uncomment the below and comment above for testing --> disable BTB to test performance without prediction
+  //ifStage.io.btbHit := false.B 
+  ifStage.io.btbTarget := btb.io.target
+
   // ============================================================================
   // IF/ID Barrier
   // ============================================================================
@@ -102,6 +118,8 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   ifBarrier.io.instr_in := ifStage.io.instr
   ifBarrier.io.pc_in := ifStage.io.outPC // Pass the current PC to IF Barrier
   ifBarrier.io.flush := exStage.io.takeBranch // Flush IF/ID barrier on branch
+
+  ifBarrier.io.inPredictTaken := isPredictedTaken // Pass the BTB prediction result to IF Barrier
   
   // ============================================================================
   // Stage 2: Instruction Decode (ID)
@@ -131,8 +149,9 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   idBarrier.io.inPC := ifBarrier.io.pc_out // Pass the PC from IF Barrier to ID Barrier
   idBarrier.io.flush := exStage.io.takeBranch // Flush ID/EX barrier on branch
 
-  // Pass RegWrite flag from ID Stage to ID/EX Barrier
-  idBarrier.io.inRegWrite := idStage.io.regWrite
+  idBarrier.io.inRegWrite := idStage.io.regWrite // Pass RegWrite flag from ID Stage to ID/EX Barrier
+
+  idBarrier.io.inPredictTaken := ifBarrier.io.outPredictTaken // Pass the BTB prediction result from IF Barrier to ID/EX Barrier
 
 
   //===========================================================================
@@ -176,6 +195,14 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   //Forwarding data inputs (from MEM and WB stages) to EX stage
   exStage.io.dataFromWB := memBarrier.io.outAluResult // Forward ALU result from MEM stage
   exStage.io.dataFromMEM := exBarrier.io.outAluResult // Forward ALU result from EX stage (for MEM stage)
+
+  exStage.io.predictTaken := idBarrier.io.outPredictTaken //Feed prediction result into EX stage for evaluating branches
+
+  // Send EX results BACK to the BTB for learning
+  btb.io.update := exStage.io.btbUpdate
+  btb.io.updatePC := exStage.io.btbUpdatePC
+  btb.io.updateTarget := exStage.io.btbUpdateTarget
+  btb.io.mispredicted := exStage.io.btbMispredict
   
   // ============================================================================
   // EX/MEM Barrier
@@ -233,4 +260,8 @@ class PipelinedRV32Icore(BinaryFile: String) extends Module {
   
   io.check_res := wbBarrier.io.outCheckRes
   io.exception := wbBarrier.io.outXcptInvalid 
+
+  // Connect performance counters from EX stage to top-level I/O
+  io.total_branches := exStage.io.totalBranches
+  io.total_mispredicts := exStage.io.totalMispredicts
 }

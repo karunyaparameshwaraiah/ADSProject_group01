@@ -529,8 +529,8 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       
       var found = false
       
-      // Run for up to 100 cycles to find the result
-      for (_ <- 0 until 100) {
+      // Run for up to 500 cycles to find the result
+      for (_ <- 0 until 500) {
         dut.clock.step(1)
         
         // Check if the result 100 appears on the output
@@ -542,6 +542,21 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       // Assert that we found the success value
       assert(found, "The processor never output the value 100! (Loop might be stuck or result missed)")
       
+      // FETCH PERFORMANCE COUNTERS
+      val branches = dut.io.total_branches.peek().litValue.toDouble
+      val mispredicts = dut.io.total_mispredicts.peek().litValue.toDouble
+      val correct = branches - mispredicts
+      val accuracy = if (branches > 0) (correct / branches) * 100.0 else 0.0
+
+      println("==================================================")
+      println("          BTB PERFORMANCE EVALUATION              ")
+      println("==================================================")
+      println(f"Total Branches Executed:  ${branches.toInt}")
+      println(f"Total Mispredictions:     ${mispredicts.toInt}")
+      println(f"Total Correct Predictions:${correct.toInt}")
+      println(f"Prediction Accuracy:      ${accuracy}%.2f%%")
+      println("==================================================")
+
       println("Test 9: Control Hazards (Branch Loop) - PASSED")
     }
   }

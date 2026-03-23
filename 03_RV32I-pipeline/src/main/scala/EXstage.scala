@@ -61,16 +61,30 @@ class EX extends Module {
     // Forwarding data inputs
     val dataFromWB = Input(UInt(32.W)) // Data forwarded from WB stage
     val dataFromMEM = Input(UInt(32.W)) // Data forwarded from MEM stage
+
+    val predictTaken = Input(Bool()) // Branch prediction result from BTB
     
     // Outputs to EX Barrier
     val aluResult = Output(UInt(32.W))
     val outRD = Output(UInt(5.W))
     val outXcptInvalid = Output(Bool())
+
+    // These now act as "Flush Pipeline" and "Recovery Address"
     val takeBranch = Output(Bool()) // True if we should jump
     val targetAddr = Output(UInt(32.W)) // Where to jump if takeBranch is true
 
     // Pass RegWrite to the EX Barrier
     val outRegWrite = Output(Bool())
+
+    // Outputs to update the BTB
+    val btbUpdate = Output(Bool())
+    val btbUpdatePC = Output(UInt(32.W))
+    val btbUpdateTarget = Output(UInt(32.W))
+    val btbMispredict = Output(Bool())
+
+    // Hardware Performance Counters
+    val totalBranches = Output(UInt(32.W))
+    val totalMispredicts = Output(UInt(32.W))
   })
 
   // Instantiate ALU from Assignment02
@@ -150,10 +164,15 @@ class EX extends Module {
   alu.io.operation := aluOp
 
 
-  val targetBase = Mux(io.uop === uopJALR, opA_mux, io.pc) // JALR uses rs1 as base, JAL uses PC
-  io.targetAddr := targetBase + io.imm
+  //val targetBase = Mux(io.uop === uopJALR, opA_mux, io.pc) // JALR uses rs1 as base, JAL uses PC
+  //io.targetAddr := targetBase + io.imm
 
-  // Branch decision logic (for simplicity, we only handle BEQ here as an example)
+  // Branch resolution and BTB logic
+  val isBranch = (io.uop === uopBEQ) || (io.uop === uopBNE) || (io.uop === uopBLT) || 
+                 (io.uop === uopBGE) || (io.uop === uopBLTU) || (io.uop === uopBGEU)
+  val isJump = (io.uop === uopJAL) || (io.uop === uopJALR)
+
+  /* // Branch decision logic (for simplicity, we only handle BEQ here as an example)
   io.takeBranch := MuxLookup(io.uop.asUInt, false.B, Seq(
     uopJAL.asUInt -> true.B, // Always take JAL
     uopJALR.asUInt -> true.B, // Always take JALR
@@ -163,12 +182,56 @@ class EX extends Module {
     uopBGE.asUInt -> (opA_mux.asSInt >= opB_mux.asSInt), // Take branch if rs1 >= rs2 (signed)
     uopBLTU.asUInt -> (opA_mux < opB_mux), // Take branch if rs1 < rs2 (unsigned)
     uopBGEU.asUInt -> (opA_mux >= opB_mux) // Take branch if rs1 >= rs2 (unsigned)
+  )) */
+
+  // Updated branch decision logic to incorporate BTB prediction
+  val actualBranchTaken = MuxLookup(io.uop.asUInt, false.B, Seq(
+    uopBEQ.asUInt -> (opA_mux === opB_mux), 
+    uopBNE.asUInt -> (opA_mux =/= opB_mux), 
+    uopBLT.asUInt -> (opA_mux.asSInt < opB_mux.asSInt), 
+    uopBGE.asUInt -> (opA_mux.asSInt >= opB_mux.asSInt), 
+    uopBLTU.asUInt -> (opA_mux < opB_mux), 
+    uopBGEU.asUInt -> (opA_mux >= opB_mux) 
   ))
 
-  val linkAddr = io.pc + 4.U // Address of the next instruction (for JAL/JALR link)
-  val isJump = (io.uop === uopJAL) || (io.uop === uopJALR)
+  //val linkAddr = io.pc + 4.U // Address of the next instruction (for JAL/JALR link)
+  //val isJump = (io.uop === uopJAL) || (io.uop === uopJALR)
 
-  //Updated output logic to handle jumps and branches
+  val actualTaken = isJump || (isBranch && actualBranchTaken) // True if the instruction is a jump or a branch that is actually taken
+  val branchTarget = Mux(io.uop === uopJALR, opA_mux, io.pc) + io.imm // Calculate target address based on instruction type
+
+  // 1. Did we mispredict?
+  val mispredicted = isBranch && (actualBranchTaken =/= io.predictTaken)
+
+  // 2. Do we need to flush? 
+  // We flush if we mispredicted a branch, OR if it is a Jump (Jumps are unconditionally flushed per spec)
+  io.takeBranch := mispredicted || isJump
+
+  // 3. If we predicted TAKEN but it actually wasn't, recover to PC + 4
+  // Otherwise, recover to the branchTarget
+  io.targetAddr := Mux(actualTaken, branchTarget, io.pc + 4.U)
+
+  // 4. Update the BTB
+  io.btbUpdate := isBranch
+  io.btbUpdatePC := io.pc
+  io.btbUpdateTarget := branchTarget
+  io.btbMispredict := mispredicted
+
+  // --- OUTPUT LOGIC ---
+  val linkAddr = io.pc + 4.U 
+  when(io.rd === 0.U) {
+    io.aluResult := 0.U
+  } .elsewhen(isJump) {
+    io.aluResult := linkAddr 
+  } .otherwise {
+    io.aluResult := alu.io.aluResult  
+  }
+
+  io.outRD := io.rd
+  io.outXcptInvalid := io.XcptInvalid
+  io.outRegWrite := io.regWrite
+
+  /* //Updated output logic to handle jumps and branches
   when(io.rd === 0.U) {
     io.aluResult := 0.U
   } .elsewhen(isJump) {
@@ -179,5 +242,21 @@ class EX extends Module {
 
   io.outRD := io.rd
   io.outXcptInvalid := io.XcptInvalid
-  io.outRegWrite := io.regWrite // Pass the regWrite signal through
+  io.outRegWrite := io.regWrite // Pass the regWrite signal through */
+
+  // PERFORMANCE COUNTERS
+  val branchCounter = RegInit(0.U(32.W))
+  val mispredictCounter = RegInit(0.U(32.W))
+
+  // Only increment if rd != 0 to prevent counting flushed/bubble instructions
+  when(isBranch && io.uop =/= uopNOP) {
+    branchCounter := branchCounter + 1.U
+    when(mispredicted) {
+      mispredictCounter := mispredictCounter + 1.U
+    }
+  }
+
+  io.totalBranches := branchCounter
+  io.totalMispredicts := mispredictCounter
+
 }

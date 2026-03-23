@@ -56,6 +56,9 @@ class IDbarrier extends Module {
 
     //Input for Register Write control signal
     val inRegWrite = Input(Bool())
+
+    //Input prediction
+    val inPredictTaken = Input(Bool())
     
     // Outputs to EX stage
     val outUOP = Output(uopc())         // ChiselEnum type
@@ -70,6 +73,9 @@ class IDbarrier extends Module {
 
     // Output for Register Write control signal
     val outRegWrite = Output(Bool())
+
+    // Output prediction to EX stage
+    val outPredictTaken = Output(Bool())
   })
 
   // Pipeline registers
@@ -83,8 +89,9 @@ class IDbarrier extends Module {
   val imm = RegInit(0.U(32.W)) // Register for Immediate value
   val pc = RegInit(0.U(32.W))  // Register for Program Counter
 
-  // Register for RegWrite signal
-  val regWrite = RegInit(false.B)
+  val regWrite = RegInit(false.B) // Register for RegWrite signal
+
+  val predictReg = RegInit(false.B) // Register for branch prediction result
   
   //Flush logic
   when(io.flush) {
@@ -98,6 +105,7 @@ class IDbarrier extends Module {
     imm := 0.U
     pc := 0.U
     regWrite := false.B // Clear write enable on flush
+    predictReg := false.B // Clear prediction on flush
   } .otherwise {
     // Normal operation: capture inputs into registers on each clock cycle
     uop := io.inUOP
@@ -110,6 +118,7 @@ class IDbarrier extends Module {
     imm := io.inImm
     pc := io.inPC
     regWrite := io.inRegWrite // Pass the signal
+    predictReg := io.inPredictTaken // Pass prediction along
   }
 
 //   // Update registers with inputs each cycle
@@ -132,4 +141,5 @@ class IDbarrier extends Module {
   io.outImm := imm // Output Immediate value to EX stage
   io.outPC := pc // Output Program Counter to EX stage
   io.outRegWrite := regWrite // Output RegWrite signal to EX stage
+  io.outPredictTaken := predictReg // Output branch prediction result to EX stage
 }
