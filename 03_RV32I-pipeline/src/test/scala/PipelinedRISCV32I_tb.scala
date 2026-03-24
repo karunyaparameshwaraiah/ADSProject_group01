@@ -521,8 +521,28 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  // Test 9: Control Hazards - Branching and Flushing
-  "Test9_Branching" should "execute loops and flush pipeline correctly" in {
+  // Test 9: Full ISA Control Flow (All Branches & Jumps)
+  "Test9_AllBranches" should "correctly execute all branch and jump types" in {
+    test(new PipelinedRV32I("src/test/programs/BinaryFile_all_branches")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      // Disable timeout just in case it takes a few extra cycles to flush
+      dut.clock.setTimeout(0)
+      
+      // Step enough clock cycles to traverse the entire gauntlet
+      // 19 instructions + 5-stage pipeline fill + branch flush penalties
+      dut.clock.step(80) 
+      
+      // Check the final result. 
+      // 88 = Success (passed all tests and bypassed all traps)
+      // 1 = Failure (took a wrong path and hit a trap)
+      dut.io.result.expect(88.U)
+      
+      println("Test 9: All Branches and Jumps Test - PASSED")
+    }
+  }
+
+  // Test 10: Control Hazards - Branching and Flushing
+  "Test10_Branching" should "execute loops and flush pipeline correctly" in {
     test(new PipelinedRV32I("src/test/programs/Binary_file_branch")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       
       dut.clock.setTimeout(0)
@@ -557,7 +577,7 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       println(f"Prediction Accuracy:      ${accuracy}%.2f%%")
       println("==================================================")
 
-      println("Test 9: Control Hazards (Branch Loop) - PASSED")
+      println("Test 10: Control Hazards (Branch Loop) - PASSED")
     }
   }
 }
