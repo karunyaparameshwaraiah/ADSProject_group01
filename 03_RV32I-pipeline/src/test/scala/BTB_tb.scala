@@ -81,6 +81,10 @@ class BTBTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.updatePC.poke(pc2)
       stepCycle()
 
+      dut.io.PC.poke(pc2)
+      dut.io.valid.expect(true.B)
+      stepCycle()
+
       // Read PC1 to make PC2 the "Least Recently Used"
       dut.io.PC.poke(pc1)
       dut.io.valid.expect(true.B)
@@ -100,7 +104,86 @@ class BTBTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.PC.poke(pc3)
       dut.io.valid.expect(true.B) // PC3 is valid!
+
+      println("--- TEST 4: FSM Upward Transitions (Strong NT <-> Strong Taken) ---")
       
+      val pc4 = "h00000080".U
+      val target4 = "h00000800".U
+
+      // Helper function for clean FSM updates
+      def updateFSM(isMispredicted: Boolean): Unit = {
+        dut.io.update.poke(true.B)
+        dut.io.updatePC.poke(pc4)
+        dut.io.updateTarget.poke(target4)
+        dut.io.mispredicted.poke(isMispredicted.B)
+        stepCycle()
+      }
+
+      // 1. Allocate (Starts at Weakly Taken, Predicts T)
+      updateFSM(false)
+
+      // 2. Force DOWN to Strongly Not Taken (00)
+      // Current: Predict T. We want F. -> Mismatch!
+      updateFSM(true) 
+      // Current: Predict F. We want F. -> Match!
+      updateFSM(false) 
+
+      // Verify we are at the bottom: Strongly Not Taken
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(false.B)
+
+      println("Starting the upward climb...")
+
+      // 3. Strongly NT -> Weakly NT
+      // Current: Predict F. We want T. -> Mismatch!
+      updateFSM(true)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(false.B) 
+
+      // 4. Weakly NT -> Weakly Taken
+      // Current: Predict F. We want T. -> Mismatch!
+      updateFSM(true)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(true.B) 
+
+      // 5. Weakly Taken -> Strongly Taken
+      // Current: Predict T. We want T. -> Match!
+      updateFSM(false)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(true.B) 
+
+      // 6. Strongly Taken Cap (Saturation Test)
+      // Current: Predict T. We want T. -> Match!
+      updateFSM(false)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(true.B) 
+
+      println("Walking back down the stairs...")
+
+      // 7. Strongly Taken -> Weakly Taken
+      // Current: Predict T. We want F. -> Mismatch!
+      updateFSM(true)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(true.B) 
+
+      // 8. Weakly Taken -> Weakly Not Taken
+      // Current: Predict T. We want F. -> Mismatch!
+      updateFSM(true)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(false.B) 
+
+      // 9. Weakly Not Taken -> Strongly Not Taken
+      // Current: Predict F. We want F. -> Match!
+      updateFSM(false)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(false.B) 
+
+      // 10. Strongly Not Taken Cap (Bottom Saturation Test)
+      // Current: Predict F. We want F. -> Match!
+      updateFSM(false)
+      dut.io.PC.poke(pc4)
+      dut.io.predictTaken.expect(false.B) 
+
       println("BTB Unit Tests Complete: LRU, Valid Targets, and FSM Transitions verified.")
     }
   }
