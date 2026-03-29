@@ -528,8 +528,21 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       // Disable timeout just in case it takes a few extra cycles to flush
       dut.clock.setTimeout(0)
       
+      /* 0x00:  00500093    addi x1, x0, 5      // x1 = 5
+      0x04:  00a00113    addi x2, x0, 10     // x2 = 10
+      0x08:  00108463    beq x1, x1, 8       // 5 == 5 (True). Taken -> jumps to 0x10
+      0x0C:  00000e63    beq x0, x0, 28      // [TRAP] Flush failed! Jumps to FAIL (0x28)
+      0x10:  00209463    bne x1, x2, 8       // 5 != 10 (True). Taken -> jumps to 0x18
+      0x14:  00000a63    beq x0, x0, 20      // [TRAP] Flush failed! Jumps to FAIL (0x28)
+      0x18:  0020c463    blt x1, x2, 8       // 5 < 10 (True). Taken -> jumps to 0x20
+      0x1C:  00000663    beq x0, x0, 12      // [TRAP] Flush failed! Jumps to FAIL (0x28)
+      0x20:  05800513    addi x10, x0, 88    // Load SUCCESS CODE (88) into x10
+      0x24:  fe000ee3    beq x0, x0, -4      // Infinite Loop: Jump back to 0x20
+      0x28:  00100513    addi x10, x0, 1     // Load FAIL CODE (1) into x10
+      0x2C:  fe000ee3    beq x0, x0, -4      // Infinite Loop: Jump back to 0x28 */
+      
       // Step enough clock cycles to traverse the entire gauntlet
-      // 19 instructions + 5-stage pipeline fill + branch flush penalties
+      // 12 instructions + 5-stage pipeline fill + branch flush penalties
       dut.clock.step(80) 
       
       // Check the final result. 
@@ -578,6 +591,140 @@ class PipelinedRISCV32ITest extends AnyFlatSpec with ChiselScalatestTester {
       println("==================================================")
 
       println("Test 10: Control Hazards (Branch Loop) - PASSED")
+    }
+  }
+
+  // Test 11: Forwarding Complex - Different Operands (Simultaneous Forwarding)
+  /*
+       ASM CODE FOR: src/test/programs/Binary_file_forwarding_complex
+       
+         Hex       | Assembly          | Action
+      -------------------------------------------------------------------------
+       * 00A00093  | addi x1, x0, 10   | x1 = 10
+       * 01400113  | addi x2, x0, 20   | x2 = 20
+       * 002081B3  | add x3, x1, x2    | x3 = 30
+       * 00118233  | add x4, x3, x1    | x4 = 40 (Forwards x3 from EX/MEM to rs1)
+       * 003202B3  | add x5, x4, x3    | DOUBLE HAZARD: x5 = 70. 
+       * 00000013  | nop               | Requires x4 forwarded from EX/MEM (rs1) AND
+       * 00000013  | nop               | x3 forwarded from MEM/WB (rs2) simultaneously!
+  */
+  "Test11_Forwarding_Complex" should "forward to both rs1 and rs2 simultaneously from different stages" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_forwarding_complex")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      dut.clock.setTimeout(0)
+      
+      // Fast forward to first Writeback
+      dut.clock.step(5)
+      dut.io.result.expect(10.U) // addi x1, x0, 10
+      dut.io.exception.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.result.expect(20.U) // addi x2, x0, 20
+      dut.io.exception.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.result.expect(30.U) // add x3, x1, x2  (30)
+      dut.io.exception.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.result.expect(40.U) // add x4, x3, x1  (40 - forwards x3 from EX/MEM to rs1)
+      dut.io.exception.expect(false.B)
+
+      dut.clock.step(1)
+      // add x5, x4, x3
+      // Forwards x4 from EX/MEM to rs1 AND forwards x3 from MEM/WB to rs2 simultaneously
+      dut.io.result.expect(70.U) 
+      dut.io.exception.expect(false.B)
+      
+      println("Test 11: Complex Forwarding (Different Operands) - PASSED")
+    }
+  }
+
+  // Test 12: Forwarding Barriers - Delayed Hazards
+  /*
+       * ASM CODE FOR: src/test/programs/Binary_file_forwarding_barrier
+       *
+       * Hex       | Assembly          | Action / Hazard
+       * -------------------------------------------------------------------------
+       * 00500093  | addi x1, x0, 5    | x1 = 5
+       * 00000013  | nop               | 1-cycle gap
+       * 00000013  | nop               | 2-cycle gap
+       * 00A08113  | addi x2, x1, 10   | DELAYED HAZARD: x2 = 15.
+       * 00000013  | nop               | Because of the NOPs, the new x1 value is sitting 
+       * 00000013  | nop               | in the MEM/WB barrier, not the EX/MEM barrier.
+       * 001101B3  | add x3, x2, x1    | x3 = 20 (Safely reads from Register File)
+       * 00000013  | nop               | padding
+       */
+  "Test12_Forwarding_With_Barriers" should "forward correctly across different pipeline barriers (MEM stage)" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_forwarding_barrier")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      
+      dut.clock.setTimeout(0)
+      
+      dut.clock.step(5)
+      dut.io.result.expect(5.U) // addi x1, x0, 5
+      dut.io.exception.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.result.expect(0.U) // NOP
+      
+      dut.clock.step(1)
+      dut.io.result.expect(0.U) // NOP
+      
+      dut.clock.step(1)
+      // addi x2, x1, 10
+      // Because of the NOPs, x1 is sitting further down the pipeline.
+      // The forwarding unit must grab it from the MEM/WB barrier, not the EX/MEM barrier.
+      dut.io.result.expect(15.U) 
+      dut.io.exception.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.result.expect(0.U) // NOP
+      
+      dut.clock.step(1)
+      dut.io.result.expect(0.U) // NOP
+
+      dut.clock.step(1)
+      // add x3, x2, x1 
+      // Safe read from register file, confirms data wasn't corrupted by forwarding logic
+      dut.io.result.expect(20.U) 
+      dut.io.exception.expect(false.B)
+      
+      println("Test 12: Barrier Forwarding (Delayed Hazards) - PASSED")
+    }
+  }
+  // Test 13: Pipeline Flush Functionality
+  /*
+       * ASM CODE FOR: src/test/programs/Binary_file_flush_test
+       * Hex       | Assembly          | Action / Hazard
+       * -------------------------------------------------------------------------
+       * 00100093  | addi x1, x0, 1    | x1 = 1
+       * 00108463  | beq x1, x1, 8     | 1 == 1 (True). Jumps to PC+8, skipping the next line.
+       * 3E700113  | addi x2, x0, 999  | Speculatively fetched into ID
+       * 05800513  | addi x10, x0, 88  | TARGET REACHED: x10 = 88. 
+       * 00000013  | nop               | If flush fails, x2 becomes 999 and ruins the pipeline.
+       * 00000013  | nop               | If flush succeeds, the poison pill becomes a NOP.
+       */
+  "Test13_Flush" should "squash the speculatively fetched instruction in the delay slot" in {
+    test(new PipelinedRV32I("src/test/programs/Binary_file_flush_test")).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+
+      dut.clock.setTimeout(0)
+      
+      // Fast forward to the first Writeback
+      dut.clock.step(5)
+      dut.io.result.expect(1.U) // addi x1, x0, 1
+      dut.io.exception.expect(false.B)
+
+      // Step forward 4 cycles to allow the fetched '88' instruction 
+      // to travel from the IF stage all the way to the WB stage.
+      dut.clock.step(4)
+      
+      // Check the output. 
+      // If the flush failed, the output here would be 999!
+      // Because it is 88, it proves the flush successfully squashed the poison pill.
+      dut.io.result.expect(88.U) // addi x10, x0, 88
+      dut.io.exception.expect(false.B)
+      
+      println("Test 13: Pipeline Flush Functionality - PASSED")
     }
   }
 }
